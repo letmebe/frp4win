@@ -52,9 +52,11 @@ jobs:
       - name: Add custom install.bat
         if: env.version != ''
         run: |
-          ls -la
           unzip_dir=$(echo frp_*/)
           echo "Unzip directory: $unzip_dir"
+          sudo chown -R runner:docker "$unzip_dir"
+          chmod -R u+w "$unzip_dir"
+          ls -la
           if [ -d "$unzip_dir" ]; then
             cp custom-files/install.bat "$unzip_dir/"
             cp custom-files/frpcs.xml "$unzip_dir/"
