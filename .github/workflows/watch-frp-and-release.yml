@@ -1,0 +1,85 @@
+name: Watch FRP and Create Custom Release
+
+on:
+  schedule: 
+    - cron: '*/30 * * * *' # 每半小时运行一次
+  workflow_dispatch:        # 支持手动触发
+
+jobs:
+  check-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v3
+
+      - name: Get latest version from GitHub API
+        id: get_version
+        run: |
+          LATEST_VERSION=$(curl -s "https://api.github.com/repos/fatedier/frp/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
+          echo "Latest version: $LATEST_VERSION"
+          
+          if [ -f current_version.txt ]; then
+            CURRENT_VERSION=$(cat current_version.txt)
+            echo "Current version in file: $CURRENT_VERSION"
+            if [ "$LATEST_VERSION" == "$CURRENT_VERSION" ]; then
+              echo "No new version found."
+              exit 0
+            fi
+          fi
+
+          echo "$LATEST_VERSION" > current_version.txt
+          echo "version=$LATEST_VERSION" >> $GITHUB_ENV
+
+      - name: Skip job if no new version
+        if: env.version == ''
+        run: echo "No new version, skipping."
+
+      - name: Download Windows AMD64 ZIP
+        if: env.version != ''
+        run: |
+          VERSION=${{ env.version }}
+          FILENAME="frp_${VERSION#v}_windows_amd64.zip"
+          URL="https://github.com/fatedier/frp/releases/download/${VERSION}/${FILENAME}"
+          echo "Downloading: $URL"
+          curl -L -o "$FILENAME" "$URL"
+
+      - name: Extract ZIP
+        if: env.version != ''
+        uses: montudor/action-zip@v1
+        with:
+          args: unzip ./frp_ *.zip
+
+      - name: Add custom install.bat
+        if: env.version != ''
+        run: |
+          unzip_dir=$(ls -d frp_*/)
+          cp custom-files/install.bat "$unzip_dir/"
+          cp custom-files/frpcs.xml "$unzip_dir/"
+
+      - name: Repack into new ZIP
+        if: env.version != ''
+        run: |
+          unzip_dir=$(ls -d frp_*/)
+          new_zip="custom_${unzip_dir}.zip"
+          cd "$unzip_dir" && zip -r "../$new_zip" .
+          echo "Generated: $new_zip"
+          echo "NEW_ZIP=$new_zip" >> $GITHUB_ENV
+
+      - name: Create GitHub Release
+        if: env.version != ''
+        id: create_release
+        uses: ncipollo/release-action@v1
+        with:
+          tag: ${{ env.version }}     # 使用源项目的 tag
+          name: Custom Build for ${{ env.version }}
+          body: Auto-generated custom build with install.bat added.
+          draft: false
+          prerelease: false
+          allowUpdates: true
+
+      - name: Upload Asset to Release
+        if: env.version != '' && env.NEW_ZIP != ''
+        uses: ncipollo/upload-asset-action@v1
+        with:
+          assetPath: ${{ env.NEW_ZIP }}
+          releaseId: ${{ steps.create_release.outputs.releaseId }}
