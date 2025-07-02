@@ -80,8 +80,8 @@ jobs:
           # 删除旧的源 zip 文件
           rm -f "$original_zip"
 
-          # 重新打包为同名 zip 文件
-          cd "$unzip_dir" && zip -r "../$original_zip" .
+          # 使用 -r 参数直接将目录打包到上级目录（不进入目录）
+          zip -r "$original_zip" "$unzip_dir"
 
           # 设置环境变量供后续使用
           echo "NEW_ZIP=$original_zip" >> $GITHUB_ENV
