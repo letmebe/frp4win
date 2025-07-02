@@ -47,15 +47,21 @@ jobs:
         if: env.version != ''
         uses: montudor/action-zip@v1
         with:
-          args: unzip -qq *.zip -d ./frp_
-
+          args: unzip -qq *.zip -d .
+      
       - name: Add custom install.bat
         if: env.version != ''
         run: |
-          unzip_dir=$(ls -d frp_*)
-          echo "Unzip dir: $unzip_dir"
-          cp custom-files/install.bat "$unzip_dir/"
-          cp custom-files/frpcs.xml "$unzip_dir/"
+          ls -la
+          unzip_dir=$(echo frp_*/)
+          echo "Unzip directory: $unzip_dir"
+          if [ -d "$unzip_dir" ]; then
+            cp custom-files/install.bat "$unzip_dir/"
+            cp custom-files/frpcs.xml "$unzip_dir/"
+          else
+            echo "Directory '$unzip_dir' does not exist!"
+            exit 1
+          fi
           
       - name: Repack into new ZIP
         if: env.version != ''
