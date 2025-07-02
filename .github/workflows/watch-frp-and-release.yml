@@ -1,10 +1,10 @@
 name: Watch FRP and Create Custom Release
 
 on:
-  schedule: 
+  schedule:
     - cron: '0 0 1 * *'
     # - cron: '*/30 * * * *' # 每半小时运行一次
-  workflow_dispatch:        # 支持手动触发
+  workflow_dispatch: # 支持手动触发
 
 jobs:
   check-release:
@@ -18,22 +18,36 @@ jobs:
         run: |
           LATEST_VERSION=$(curl -s "https://api.github.com/repos/fatedier/frp/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
           echo "Latest version: $LATEST_VERSION"
-          
-          if [ -f current_version.txt ]; then
-            CURRENT_VERSION=$(cat current_version.txt)
-            echo "Current version in file: $CURRENT_VERSION"
-            if [ "$LATEST_VERSION" == "$CURRENT_VERSION" ]; then
-              echo "No new version found."
-              exit 0
-            fi
-          fi
-
-          echo "$LATEST_VERSION" > current_version.txt
           echo "version=$LATEST_VERSION" >> $GITHUB_ENV
 
-      - name: Skip job if no new version
-        if: env.version == ''
-        run: echo "No new version, skipping."
+      - name: Check marker release
+        id: check-marker
+        run: |
+          set -e
+
+          GITHUB_TOKEN=${{ secrets.GH_TOKEN }}
+          REPO_OWNER=$(echo "${{ github.repository }}" | cut -d '/' -f1)
+          REPO_NAME=$(echo "${{ github.repository }}" | cut -d '/' -f2)
+
+          # 获取标记 release
+          response=$(curl -s -H "Authorization: Bearer $GITHUB_TOKEN" \
+            "https://api.github.com/repos/$REPO_OWNER/$REPO_NAME/releases/tags/custom-build-marker")
+
+          MARKER_VERSION=""
+          if echo "$response" | grep -q '"body":'; then
+            MARKER_VERSION=$(echo "$response" | grep '"body":' | sed -E 's/.*"([^"]+)".*/\1/')
+          fi
+
+          echo "Marker version: $MARKER_VERSION"
+          echo "Current version: ${{ env.version }}"
+
+          if [ "$MARKER_VERSION" == "${{ env.version }}" ]; then
+            echo "No new version found,skipping."
+            echo "SKIP_RELEASE=true" >> $GITHUB_ENV
+            exit 0
+          else
+            echo "New version detected. Proceeding..."
+          fi
 
       - name: Download Windows AMD64 ZIP
         if: env.version != ''
@@ -49,16 +63,16 @@ jobs:
         uses: montudor/action-zip@v1
         with:
           args: unzip -qq *.zip -d .
-      
+
       - name: Add custom install.bat
         if: env.version != ''
         run: |
           unzip_dir=$(echo frp_*/)
           echo "Unzip directory: $unzip_dir"
-          # 默认解压出的文件夹owner是root,没有写权限,所以得修改为runner
+
           sudo chown -R runner:docker "$unzip_dir"
           chmod -R u+w "$unzip_dir"
-          ls -la
+
           if [ -d "$unzip_dir" ]; then
             cp custom-files/install.bat "$unzip_dir/"
             cp custom-files/frpcs.xml "$unzip_dir/"
@@ -66,28 +80,17 @@ jobs:
             echo "Directory '$unzip_dir' does not exist!"
             exit 1
           fi
-          
+
       - name: Repack into new ZIP (same name)
         if: env.version != ''
         run: |
-          # 获取解压后的目录名
           unzip_dir=$(echo frp_*/)
-          echo "Unzip directory: $unzip_dir"
-
-          # 获取原始 zip 文件名（如 frp_0.63.0_windows_amd64.zip)
           original_zip=$(ls frp_*.zip)
-          echo "Original ZIP name: $original_zip"
 
-          # 删除旧的 zip 文件（即原始 zip)
           rm -f "$original_zip"
-
-          # 重新打包为同名 zip 文件
           zip -r "$original_zip" "$unzip_dir"
 
-          # 设置环境变量供后续使用
           echo "NEW_ZIP=$original_zip" >> $GITHUB_ENV
-
-          ls -la
 
       - name: Create GitHub Release and Upload Asset
         if: env.version != '' && env.NEW_ZIP != ''
@@ -101,3 +104,31 @@ jobs:
           files: ${{ env.NEW_ZIP }}
         env:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+
+      - name: Update marker release
+        if: env.version != '' && env.NEW_ZIP != ''
+        run: |
+          GITHUB_TOKEN=${{ secrets.GH_TOKEN }}
+          REPO_OWNER=$(echo "${{ github.repository }}" | cut -d '/' -f1)
+          REPO_NAME=$(echo "${{ github.repository }}" | cut -d '/' -f2)
+          CURRENT_VERSION=${{ env.version }}
+
+          # 获取已有的 marker release
+          response=$(curl -s -H "Authorization: Bearer $GITHUB_TOKEN" \
+            "https://api.github.com/repos/$REPO_OWNER/$REPO_NAME/releases/tags/custom-build-marker")
+
+          release_id=$(echo "$response" | grep '"id":' | head -n1 | sed -E 's/.*: ([0-9]+),*/\1/')
+
+          if [ -z "$release_id" ]; then
+            # 创建新的 draft release
+            curl -X POST -H "Authorization: Bearer $GITHUB_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              -d '{"tag_name":"custom-build-marker","name":"Custom Build Marker","body":"'"$CURRENT_VERSION"'","draft":true,"prerelease":false}' \
+              "https://api.github.com/repos/$REPO_OWNER/$REPO_NAME/releases"
+          else
+            # 更新已有 release 的 body
+            curl -X PATCH -H "Authorization: Bearer $GITHUB_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              -d '{"body":"'"$CURRENT_VERSION"'"}' \
+              "https://api.github.com/repos/$REPO_OWNER/$REPO_NAME/releases/$release_id"
+          fi
