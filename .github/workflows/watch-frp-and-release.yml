@@ -70,19 +70,18 @@ jobs:
         if: env.version != ''
         run: |
           # 获取解压后的目录名
-          unzip_dir=$(ls -d frp_*)
+          unzip_dir=$(echo frp_*/)
           echo "Unzip directory: $unzip_dir"
 
-          # 构造新的 zip 名称（和源文件名一样）
-          original_zip="frp_${{ env.version }}_windows_amd64.zip"
+          # 获取原始 zip 文件名（如 frp_0.63.0_windows_amd64.zip)
+          original_zip=$(ls frp_*.zip)
           echo "Original ZIP name: $original_zip"
 
-          # 删除旧的源 zip 文件
+          # 删除旧的 zip 文件（即原始 zip)
           rm -f "$original_zip"
-          ls -la
 
-          # 使用 -r 参数直接将目录打包
-          zip -r "$original_zip" "$unzip_dir/"
+          # 重新打包为同名 zip 文件
+          zip -r "$original_zip" "$unzip_dir"
 
           # 设置环境变量供后续使用
           echo "NEW_ZIP=$original_zip" >> $GITHUB_ENV
