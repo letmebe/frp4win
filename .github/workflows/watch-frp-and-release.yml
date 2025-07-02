@@ -55,7 +55,7 @@ jobs:
           unzip_dir=$(ls -d frp_*/)
           cp custom-files/install.bat "$unzip_dir/"
           cp custom-files/frpcs.xml "$unzip_dir/"
-
+          
       - name: Repack into new ZIP
         if: env.version != ''
         run: |
@@ -65,21 +65,13 @@ jobs:
           echo "Generated: $new_zip"
           echo "NEW_ZIP=$new_zip" >> $GITHUB_ENV
 
-      - name: Create GitHub Release
-        if: env.version != ''
-        id: create_release
-        uses: ncipollo/release-action@v1
+      - name: Create GitHub Release and Upload Asset
+        if: env.version != '' && env.NEW_ZIP != ''
+        uses: softprops/action-gh-release@v1
         with:
-          tag: ${{ env.version }}     # 使用源项目的 tag
+          tag_name: ${{ env.version }}
           name: Custom Build for ${{ env.version }}
           body: Auto-generated custom build with install.bat added.
           draft: false
           prerelease: false
-          allowUpdates: true
-
-      - name: Upload Asset to Release
-        if: env.version != '' && env.NEW_ZIP != ''
-        uses: ncipollo/upload-asset-action@v1
-        with:
-          assetPath: ${{ env.NEW_ZIP }}
-          releaseId: ${{ steps.create_release.outputs.releaseId }}
+          files: ${{ env.NEW_ZIP }}
