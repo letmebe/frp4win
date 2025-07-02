@@ -60,7 +60,7 @@ jobs:
       - name: Repack into new ZIP
         if: env.version != ''
         run: |
-          unzip_dir=$(ls -d frp_*/)
+          unzip_dir=$(ls -d frp_*)
           echo "Unzip dir: $unzip_dir"
           new_zip="custom_${unzip_dir}.zip"
           cd "$unzip_dir" && zip -r "../$new_zip" .
