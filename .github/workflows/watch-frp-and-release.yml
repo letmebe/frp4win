@@ -52,7 +52,7 @@ jobs:
       - name: Add custom install.bat
         if: env.version != ''
         run: |
-          unzip_dir=$(ls -d frp_*/)
+          unzip_dir=$(ls -d frp_*)
           echo "Unzip dir: $unzip_dir"
           cp custom-files/install.bat "$unzip_dir/"
           cp custom-files/frpcs.xml "$unzip_dir/"
