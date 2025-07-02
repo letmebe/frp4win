@@ -9,6 +9,8 @@ on:
 jobs:
   check-release:
     runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GH_TOKEN }}
     steps:
       - name: Checkout repo
         uses: actions/checkout@v3
@@ -24,29 +26,26 @@ jobs:
         run: |
           set -e
 
-          # 获取当前版本号
           CURRENT_VERSION=${{ env.version }}
+          REPO_OWNER=$(echo "${{ github.repository }}" | cut -d '/' -f1)
+          REPO_NAME=$(echo "${{ github.repository }}" | cut -d '/' -f2)
 
-          # 检查当前仓库是否已有该版本的 release
-          response=$(curl -s -H "Authorization: Bearer ${{ secrets.GH_TOKEN }}" \
-            "https://api.github.com/repos/${{ github.repository }}/releases/tags/$CURRENT_VERSION")
+          response=$(curl -s -H "Authorization: Bearer $GH_TOKEN" \
+            "https://api.github.com/repos/$REPO_OWNER/$REPO_NAME/releases/tags/$CURRENT_VERSION")
 
-          # 提取 release 名称字段
           release_name=$(echo "$response" | grep '"name":' | head -n1 | sed -E 's/.*"([^"]+)".*/\1/')
 
           echo "Existing release name: $release_name"
 
-          # 判断是否是我们发布的 custom build
           if [[ "$release_name" == "Custom Build for $CURRENT_VERSION" ]]; then
             echo "This version has already been released. Skipping."
             echo "SKIP_RELEASE=true" >> $GITHUB_ENV
-            exit 0
           else
             echo "No existing custom release found, proceeding..."
           fi
 
       - name: Download Windows AMD64 ZIP
-        if: env.version != ''
+        if: env.SKIP_RELEASE != 'true'
         run: |
           VERSION=${{ env.version }}
           FILENAME="frp_${VERSION#v}_windows_amd64.zip"
@@ -55,13 +54,13 @@ jobs:
           curl -L -o "$FILENAME" "$URL"
 
       - name: Extract ZIP
-        if: env.version != ''
+        if: env.SKIP_RELEASE != 'true'
         uses: montudor/action-zip@v1
         with:
           args: unzip -qq *.zip -d .
 
-      - name: Add custom install.bat
-        if: env.version != ''
+      - name: Add custom install.bat and frpcs.xml
+        if: env.SKIP_RELEASE != 'true'
         run: |
           unzip_dir=$(echo frp_*/)
           sudo chown -R runner:docker "$unzip_dir"
@@ -70,7 +69,7 @@ jobs:
           cp custom-files/frpcs.xml "$unzip_dir/"
 
       - name: Repack into new ZIP (same name)
-        if: env.version != ''
+        if: env.SKIP_RELEASE != 'true'
         run: |
           unzip_dir=$(echo frp_*/)
           original_zip=$(ls frp_*.zip)
@@ -79,7 +78,7 @@ jobs:
           echo "NEW_ZIP=$original_zip" >> $GITHUB_ENV
 
       - name: Create GitHub Release and Upload Asset
-        if: env.version != '' && env.NEW_ZIP != ''
+        if: env.SKIP_RELEASE != 'true' && env.version != '' && env.NEW_ZIP != ''
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ env.version }}
